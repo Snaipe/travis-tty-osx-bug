@@ -1,0 +1,51 @@
+language: c
+compiler: gcc
+os: osx
+
+script:
+  - |
+    cat <<EOF >test.c
+    #include <errno.h>
+    #include <fcntl.h>
+    #include <limits.h>
+    #include <mach-o/dyld.h>
+    #include <signal.h>
+    #include <stdint.h>
+    #include <stdio.h>
+    #include <string.h>
+    #include <sys/mman.h>
+    #include <sys/wait.h>
+    #include <unistd.h>
+
+    int main(void) {
+      char exe[PATH_MAX];
+      uint32_t size = PATH_MAX;
+      _NSGetExecutablePath(exe, &size);
+
+      pid_t pid = fork();
+      if (pid < 0)
+        printf("Fork error: %s\n", strerror(errno));
+
+      if (pid) {
+        waitpid(pid, NULL, WUNTRACED);
+
+        char shm_name[sizeof ("/test_") + 21];
+        snprintf(shm_name, sizeof (shm_name), "/test_%d", pid);
+
+        shm_open(shm_name, O_CREAT | O_EXCL | O_RDWR, 0600);
+        kill(SIGCONT, pid);
+
+        waitpid(pid, NULL, 0);
+        return 0;
+      }
+
+      setsid();
+
+      raise(SIGSTOP);
+
+      execl(exe, "proc", NULL);
+      return 1;
+    }
+    EOF
+  - gcc -std=c99 -Wall -Wextra -o test test.c
+  - ./test
